@@ -1,5 +1,5 @@
 import SwiftUI
-import PhotosUI
+import UniformTypeIdentifiers
 
 struct SharedExpenseAddView: View {
     @Environment(\.dismiss) private var dismiss
@@ -19,10 +19,9 @@ struct SharedExpenseAddView: View {
     @State private var showErrorAlert = false
     @State private var isSavingAll = false
 
-    // Screenshot parsing
-    @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var isParsing = false
     @State private var parseMessage: String? = nil
+    @State private var showCSVImporter = false
 
     var body: some View {
         NavigationStack {
@@ -32,7 +31,7 @@ struct SharedExpenseAddView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     headerSection
-                    importButton
+                    importSection
 
                     if isParsing {
                         parsingIndicator
@@ -79,52 +78,68 @@ struct SharedExpenseAddView: View {
                 .presentationCornerRadius(18)
             }
         }
-        .onChange(of: selectedPhotoItem) { _, newItem in
-            guard let newItem else { return }
-            Task {
-                isParsing = true
-                parseMessage = nil
-                defer {
-                    isParsing = false
-                    selectedPhotoItem = nil
-                }
-                guard let data = try? await newItem.loadTransferable(type: Data.self),
-                      let image = UIImage(data: data)
-                else {
-                    parseMessage = "画像の読み込みに失敗しました"
-                    return
-                }
-                let parsed = await ScreenshotParser.parse(image: image)
-                if parsed.isEmpty {
-                    parseMessage = "レコードが見つかりませんでした"
-                    return
-                }
-                let defaultCat = categoryOptions.first ?? "未分類"
-                let newEntries = parsed.map { tx -> ExpenseEntry in
-                    var e = ExpenseEntry()
-                    e.amountText = "\(tx.amount)"
-                    e.memo = tx.memo
-                    e.category = defaultCat
-                    e.date = tx.date
-                    return e
-                }
-                // 既存が空エントリー1件だけなら置き換え、それ以外は末尾に追加
-                let onlyEmpty = entries.count == 1 &&
-                    entries[0].amountText.isEmpty && entries[0].memo.isEmpty
-                if onlyEmpty {
-                    entries = newEntries
-                } else {
-                    entries.append(contentsOf: newEntries)
-                }
-                parseMessage = "\(parsed.count)件を読み込みました。内容を確認してください。"
-            }
-        }
         .onAppear {
             Task {
                 await vm.fetchCategories()
                 let defaultCat = categoryOptions.first ?? "未分類"
                 for i in entries.indices where entries[i].category.isEmpty {
                     entries[i].category = defaultCat
+                }
+            }
+        }
+        .fileImporter(
+            isPresented: $showCSVImporter,
+            allowedContentTypes: [UTType.commaSeparatedText, UTType.plainText]
+        ) { result in
+            Task {
+                isParsing = true
+                parseMessage = nil
+                defer { isParsing = false }
+
+                do {
+                    let url = try result.get()
+                    guard url.startAccessingSecurityScopedResource() else {
+                        parseMessage = "ファイルへのアクセスができませんでした"
+                        return
+                    }
+                    defer { url.stopAccessingSecurityScopedResource() }
+
+                    let data = try Data(contentsOf: url)
+                    let csvString = String(data: data, encoding: .utf8)
+                        ?? String(data: data, encoding: .shiftJIS)
+                        ?? ""
+
+                    guard !csvString.isEmpty else {
+                        parseMessage = "ファイルの読み込みに失敗しました"
+                        return
+                    }
+
+                    let parsed = CSVParser.parse(csvString: csvString)
+                    guard !parsed.isEmpty else {
+                        parseMessage = "レコードが見つかりませんでした。形式を確認してください（日付,金額,内容,カテゴリ）"
+                        return
+                    }
+
+                    let defaultCat = categoryOptions.first ?? "未分類"
+                    let newEntries = parsed.map { record -> ExpenseEntry in
+                        var e = ExpenseEntry()
+                        e.amountText = "\(record.amount)"
+                        e.memo = record.memo
+                        e.category = record.category.isEmpty ? defaultCat : record.category
+                        e.date = record.date
+                        return e
+                    }
+
+                    let onlyEmpty = entries.count == 1
+                        && entries[0].amountText.isEmpty && entries[0].memo.isEmpty
+                    if onlyEmpty {
+                        entries = newEntries
+                    } else {
+                        entries.append(contentsOf: newEntries)
+                    }
+                    parseMessage = "\(parsed.count)件を読み込みました。内容を確認してください。"
+                } catch {
+                    parseMessage = "CSVの読み込みに失敗しました"
                 }
             }
         }
@@ -159,30 +174,44 @@ struct SharedExpenseAddView: View {
         .padding(.bottom, 4)
     }
 
-    // MARK: - Import Button
+    // MARK: - Import Section
 
-    private var importButton: some View {
-        PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-            HStack(spacing: 8) {
-                Image(systemName: "photo.badge.magnifyingglass")
-                    .font(.system(size: 16, weight: .semibold))
-                Text("スクショから読み込む")
-                    .font(.system(size: 15, weight: .semibold))
+    private var importSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                showCSVImporter = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("CSVから読み込む")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                .foregroundStyle(Color.background)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(Color.maincolor)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
             }
-            .foregroundStyle(Color.background)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(Color.maincolor)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .disabled(isParsing)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("CSVの形式: 日付,金額,内容,カテゴリ")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.maincolor.opacity(0.5))
+                Text("例） 2024/04/01, 3800, 電気代, 光熱費")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.maincolor.opacity(0.4))
+            }
+            .padding(.horizontal, 4)
         }
-        .disabled(isParsing)
     }
 
     private var parsingIndicator: some View {
         HStack(spacing: 10) {
             ProgressView()
                 .tint(Color.maincolor)
-            Text("スクショを解析中...")
+            Text("読み込み中...")
                 .font(.system(size: 14))
                 .foregroundStyle(Color.maincolor.opacity(0.7))
         }

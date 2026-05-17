@@ -41,6 +41,7 @@ struct PairLogApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var appSession = AppSessionViewModel()
     @StateObject private var authVM = AuthViewModel()
+    @StateObject private var activeUserPref = ActiveUserPreference()
 
 
     var body: some Scene {
@@ -48,6 +49,7 @@ struct PairLogApp: App {
             AppEntryView()
                 .environmentObject(appSession)
                 .environmentObject(authVM)
+                .environmentObject(activeUserPref)
                 .preferredColorScheme(.light)
         }
     }
@@ -76,6 +78,9 @@ private struct AppEntryView: View {
 
             case .ready:
                 RootTabView()
+                    .task {
+                        await RecurringRuleExecutor.checkAndExecute()
+                    }
             }
         }
         .task {

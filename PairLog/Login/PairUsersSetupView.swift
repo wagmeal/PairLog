@@ -120,6 +120,16 @@ struct PairUsersSetupView: View {
                     imageData: $user2ImageData
                 )
                 VStack(spacing: 20) {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "info.circle")
+                            .font(.caption)
+                            .foregroundStyle(Color.maincolor.opacity(0.6))
+                        Text("プロフィール画像はこの端末にのみ保存されます。")
+                            .font(.caption)
+                            .foregroundStyle(Color.maincolor.opacity(0.6))
+                    }
+                    .padding(.horizontal, 4)
+
                     Button {
                         errorMessage = nil
                         Task {

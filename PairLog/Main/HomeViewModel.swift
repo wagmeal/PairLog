@@ -55,6 +55,21 @@ final class HomeViewModel: ObservableObject {
             }
     }
 
+    // 手動リロード（pull-to-refresh用）
+    func reload() async {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        do {
+            let snapshot = try await db.collection("users")
+                .document(uid)
+                .collection("records")
+                .order(by: "payDate", descending: true)
+                .getDocuments()
+            self.records = snapshot.documents.compactMap { Self.toRecordItem(doc: $0) }
+        } catch {
+            print("⚠️ [HomeViewModel] reload error: \(error.localizedDescription)")
+        }
+    }
+
     // アバター画像が更新されたとき（Firestore変化なし）に呼ぶ
     func reloadAvatars() {
         let avatar1 = LocalAvatarStore.loadAvatar(for: .user1)

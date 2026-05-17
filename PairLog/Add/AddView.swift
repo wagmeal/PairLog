@@ -13,6 +13,7 @@ struct PayerDisplay: Identifiable {
 
 struct AddView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var activeUserPref: ActiveUserPreference
     @Binding var showSettings: Bool
     @StateObject private var addVM = AddRecordViewModel()
     @State private var showSaveErrorAlert: Bool = false
@@ -149,6 +150,8 @@ struct AddView: View {
                     splitRatioStep = editingRecord.user2Ratio / 10
                     splitRatioSliderValue = Double(splitRatioStep)
                 } else {
+                    // 操作中ユーザーをデフォルト支払い者に設定
+                    payerIndex = activeUserPref.activeUserKey == "user2" ? 1 : 0
                     if selectedTitle.isEmpty {
                         selectedTitle = categoryOptions.first ?? "未分類"
                     }
@@ -247,6 +250,7 @@ struct AddView: View {
                     }
                 }
                 .frame(width: 74, height: 74)
+                .opacity(payerIndex == payer.id ? 1.0 : 0.35)
                 .overlay {
                     Circle()
                         .stroke(payerIndex == payer.id ? Color.maincolor : Color.maincolor.opacity(0.3), lineWidth: payerIndex == payer.id ? 2 : 1)
@@ -410,17 +414,23 @@ struct AddView: View {
     }
 
     private func miniPayerAvatar(_ payer: PayerDisplay) -> some View {
-        Group {
+        let bgColor: Color = payer.imageName == "poodle" ? Color.gray : Color.subcolor1
+
+        return ZStack {
+            Circle().fill(bgColor)
+
             if let uiImage = payer.avatarImage {
                 Image(uiImage: uiImage)
                     .resizable()
                     .scaledToFill()
+                    .frame(width: 34, height: 34)
+                    .clipShape(Circle())
             } else if !payer.imageName.isEmpty {
                 Image(payer.imageName)
                     .resizable()
                     .scaledToFill()
-            } else {
-                Circle().fill(Color.subcolor1)
+                    .frame(width: 34, height: 34)
+                    .clipShape(Circle())
             }
         }
         .frame(width: 34, height: 34)
@@ -561,7 +571,7 @@ struct AddView: View {
     private func reset() {
         selectedDate = Date()
         showDateSheet = false
-        payerIndex = 0
+        payerIndex = activeUserPref.activeUserKey == "user2" ? 1 : 0
         splitRatioStep = 5
         splitRatioSliderValue = 5
         amountText = ""
@@ -580,6 +590,7 @@ enum MockData {
 
 #Preview("新規作成") {
     AddView(showSettings: .constant(false), payers: MockData.payers, editingRecord: nil)
+        .environmentObject(ActiveUserPreference())
 }
 
 #Preview("編集") {
@@ -588,4 +599,5 @@ enum MockData {
         payers: MockData.payers,
         editingRecord: RecordsMockData.records.first
     )
+    .environmentObject(ActiveUserPreference())
 }

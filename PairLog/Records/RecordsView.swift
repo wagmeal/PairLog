@@ -13,6 +13,7 @@ struct RecordsView: View {
     let user1: User
     let user2: User
     let records: [RecordItem]
+    let onRefresh: (() async -> Void)?
 
     @StateObject private var viewModel: RecordsViewModel
 
@@ -20,12 +21,14 @@ struct RecordsView: View {
         showSettings: Binding<Bool>,
         user1: User,
         user2: User,
-        records: [RecordItem]
+        records: [RecordItem],
+        onRefresh: (() async -> Void)? = nil
     ) {
         self._showSettings = showSettings
         self.user1 = user1
         self.user2 = user2
         self.records = records
+        self.onRefresh = onRefresh
         _viewModel = StateObject(wrappedValue: RecordsViewModel(user1: user1, user2: user2, records: records))
     }
 
@@ -40,10 +43,12 @@ struct RecordsView: View {
                 ScrollView {
                     recordsCard
                 }
+                .refreshable {
+                    await onRefresh?()
+                }
             }
             .padding(.horizontal, 14)
             .padding(.top, 10)
-            .padding(.bottom, 24)
 
             VStack {
                 Spacer()
@@ -77,7 +82,9 @@ struct RecordsView: View {
                 editingRecord: nil
             )
         }
-        .sheet(item: $selectedRecord) { record in
+        .sheet(item: $selectedRecord, onDismiss: {
+            Task { await onRefresh?() }
+        }) { record in
             AddView(
                 showSettings: $showSettings,
                 payers: payerDisplays,
@@ -130,15 +137,18 @@ struct RecordsView: View {
     private var summaryCard: some View {
         HStack(alignment: .center, spacing: 0) {
             // ── ユーザーアイコン ＋ 矢印 ────────────────
-            HStack(spacing: 0) {
-                avatarView(user: user1)
+            HStack(spacing: 6) {
+                avatarView(user: viewModel.settlementPayer)
 
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 15, weight: .black))
+                Text("から")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundStyle(summaryTextColor.opacity(0.85))
-                    .padding(.horizontal, 10)
 
-                avatarView(user: user2)
+                avatarView(user: viewModel.settlementReceiver)
+
+                Text("へ")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(summaryTextColor.opacity(0.85))
             }
 
             Spacer()

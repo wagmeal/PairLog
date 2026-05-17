@@ -6,6 +6,7 @@ struct GraphView: View {
     let user1: User
     let user2: User
     let records: [RecordItem]
+    let onRefresh: (() async -> Void)?
 
     @State private var selectedTab: GraphTab = .monthly
     @State private var selectedYear: Int = Calendar.current.component(.year, from: Date())
@@ -14,9 +15,17 @@ struct GraphView: View {
     @State private var selectedYearBar: String? = nil
     @State private var showSharedExpenseSheet = false
     @State private var showSharedList = false
-    @State private var showDrillDown = false
-    @State private var drillDownTitle = ""
-    @State private var drillDownRecords: [RecordItem] = []
+    @State private var drillDownItem: DrillDownItem?
+
+    struct DrillDownItem: Identifiable {
+        enum Filter {
+            case category(String)
+            case payer(String)  // userKey "user1" or "user2"
+        }
+        let id = UUID()
+        let title: String
+        let filter: Filter
+    }
 
     enum GraphTab: String, CaseIterable {
         case monthly = "月別"
@@ -121,6 +130,15 @@ struct GraphView: View {
         filteredRecords.reduce(0) { $0 + $1.amount }
     }
 
+    private var monthlyPeriodLabel: String {
+        selectedMonth ?? "合計"
+    }
+
+    private var yearlyPeriodLabel: String {
+        if let year = selectedYearBar { return "\(year)年" }
+        return "合計"
+    }
+
     private var categoryData: [(category: String, amount: Int)] {
         let grouped = Dictionary(grouping: filteredRecords) { $0.category }
         return grouped
@@ -167,6 +185,9 @@ struct GraphView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 16)
                 }
+                .refreshable {
+                    await onRefresh?()
+                }
             }
         }
         .onChange(of: selectedTab) { _, _ in
@@ -194,10 +215,16 @@ struct GraphView: View {
         .sheet(isPresented: $showSharedList) {
             SharedExpenseListView(initialRecords: sharedRecords)
         }
-        .sheet(isPresented: $showDrillDown) {
+        .sheet(item: $drillDownItem) { item in
+            let liveRecords: [RecordItem] = {
+                switch item.filter {
+                case .category(let cat): return filteredRecords.filter { $0.category == cat }
+                case .payer(let key):    return filteredRecords.filter { $0.payerUserKey == key }
+                }
+            }()
             RecordDrillDownView(
-                title: drillDownTitle,
-                records: drillDownRecords,
+                title: item.title,
+                records: liveRecords,
                 user1: user1,
                 user2: user2
             )
@@ -213,9 +240,15 @@ struct GraphView: View {
     private var monthlyChart: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top) {
-                Text("月別支出")
-                    .font(.headline)
-                    .foregroundColor(Color.maincolor)
+                HStack(alignment: .lastTextBaseline, spacing: 6) {
+                    Text("月別支出")
+                        .font(.headline)
+                        .foregroundColor(Color.maincolor)
+                    Text(monthlyPeriodLabel)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(Color.maincolor.opacity(0.55))
+                        .animation(.easeInOut(duration: 0.2), value: monthlyPeriodLabel)
+                }
                 Spacer()
                 yearStepper
             }
@@ -307,9 +340,15 @@ struct GraphView: View {
     private var yearlyChart: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top) {
-                Text("年別支出")
-                    .font(.headline)
-                    .foregroundColor(Color.maincolor)
+                HStack(alignment: .lastTextBaseline, spacing: 6) {
+                    Text("年別支出")
+                        .font(.headline)
+                        .foregroundColor(Color.maincolor)
+                    Text(yearlyPeriodLabel)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(Color.maincolor.opacity(0.55))
+                        .animation(.easeInOut(duration: 0.2), value: yearlyPeriodLabel)
+                }
                 Spacer()
             }
 
@@ -421,9 +460,10 @@ struct GraphView: View {
                 VStack(spacing: 0) {
                     ForEach(categoryData, id: \.category) { item in
                         Button {
-                            drillDownTitle = item.category
-                            drillDownRecords = filteredRecords.filter { $0.category == item.category }
-                            showDrillDown = true
+                            drillDownItem = DrillDownItem(
+                                title: item.category,
+                                filter: .category(item.category)
+                            )
                         } label: {
                             HStack(spacing: 12) {
                                 Rectangle()
@@ -481,9 +521,10 @@ struct GraphView: View {
                 ForEach(payerData, id: \.user.id) { item in
                     let userKey = item.user.id == user1.id ? "user1" : "user2"
                     Button {
-                        drillDownTitle = "\(item.user.name)の立て替え"
-                        drillDownRecords = filteredRecords.filter { $0.payerUserKey == userKey }
-                        showDrillDown = true
+                        drillDownItem = DrillDownItem(
+                            title: "\(item.user.name)の立て替え",
+                            filter: .payer(userKey)
+                        )
                     } label: {
                         HStack(spacing: 12) {
                             Circle()
@@ -583,6 +624,7 @@ struct GraphView: View {
         showSettings: .constant(false),
         user1: RecordsMockData.user1,
         user2: RecordsMockData.user2,
-        records: RecordsMockData.records
+        records: RecordsMockData.records,
+        onRefresh: nil
     )
 }

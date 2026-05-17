@@ -147,6 +147,16 @@ final class RecordsViewModel: ObservableObject {
         abs(netFromUser1ToUser2)
     }
 
+    // 支払い元ユーザー（返す側）
+    var settlementPayer: User {
+        netFromUser1ToUser2 > 0 ? user1 : user2
+    }
+
+    // 受取ユーザー（受け取る側）
+    var settlementReceiver: User {
+        netFromUser1ToUser2 > 0 ? user2 : user1
+    }
+
     var settlementAmountText: String {
         if settlementAmount == 0 {
             return "¥0"

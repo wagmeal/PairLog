@@ -11,6 +11,7 @@ final class PairTabRouter: ObservableObject {
 }
 
 struct RootTabView: View {
+    @EnvironmentObject private var activeUserPref: ActiveUserPreference
     @StateObject private var tabRouter = PairTabRouter()
     @StateObject private var homeVM = HomeViewModel()
     @State private var showSettings = false
@@ -40,7 +41,8 @@ struct RootTabView: View {
                                 showSettings: $showSettings,
                                 user1: homeVM.user1,
                                 user2: homeVM.user2,
-                                records: homeVM.records
+                                records: homeVM.records,
+                                onRefresh: { await homeVM.reload() }
                             )
                             .id(recordsReloadKey)
                             .opacity(tabRouter.selectedTab == .records ? 1 : 0)
@@ -50,7 +52,8 @@ struct RootTabView: View {
                                 showSettings: $showSettings,
                                 user1: homeVM.user1,
                                 user2: homeVM.user2,
-                                records: homeVM.records
+                                records: homeVM.records,
+                                onRefresh: { await homeVM.reload() }
                             )
                             .id(graphReloadKey)
                             .opacity(tabRouter.selectedTab == .graph ? 1 : 0)
@@ -66,7 +69,7 @@ struct RootTabView: View {
                             tabButton(.records, label: "立て替え", systemImage: "list.bullet")
                             tabButton(.graph, label: "グラフ", systemImage: "chart.bar.xaxis")
                         }
-                        .padding(.vertical, 2)
+                        .frame(height: 49)
                     
                     
                 }
@@ -96,9 +99,42 @@ struct RootTabView: View {
                                 Spacer()
                             }
 
-                            // 右上設定ボタン
-                            HStack {
+                            // 右上：ユーザー切り替え + 設定ボタン
+                            HStack(spacing: 0) {
                                 Spacer()
+                                Menu {
+                                    Button {
+                                        activeUserPref.activeUserKey = "user1"
+                                    } label: {
+                                        if activeUserPref.activeUserKey == "user1" {
+                                            Label(homeVM.user1.name, systemImage: "checkmark")
+                                        } else {
+                                            Text(homeVM.user1.name)
+                                        }
+                                    }
+                                    Button {
+                                        activeUserPref.activeUserKey = "user2"
+                                    } label: {
+                                        if activeUserPref.activeUserKey == "user2" {
+                                            Label(homeVM.user2.name, systemImage: "checkmark")
+                                        } else {
+                                            Text(homeVM.user2.name)
+                                        }
+                                    }
+                                } label: {
+                                    let activeUser = activeUserPref.activeUserKey == "user1" ? homeVM.user1 : homeVM.user2
+                                    HStack(spacing: 6) {
+                                        headerAvatar(for: activeUser)
+                                        Text(activeUser.name)
+                                            .font(.system(size: 14, weight: .semibold))
+                                        Image(systemName: "chevron.down")
+                                            .font(.system(size: 11, weight: .semibold))
+                                    }
+                                    .foregroundStyle(Color.maincolor)
+                                    .padding(.vertical, 10)
+                                }
+                                .menuOrder(.fixed)
+
                                 Button {
                                     showSettings = true
                                 } label: {
@@ -124,12 +160,34 @@ struct RootTabView: View {
             await homeVM.start()
         }
         .sheet(isPresented: $showSettings, onDismiss: {
-            // 設定画面を閉じたときにアバター画像を再読み込み
+            // 設定画面を閉じたときにアバター画像を再読み込み＆ビューを再生成
             homeVM.reloadAvatars()
+            recordsReloadKey = UUID()
         }) {
             SettingsView()
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
+    }
+
+    // MARK: - Header Avatar
+
+    private func headerAvatar(for user: User) -> some View {
+        let bgColor: Color = user.iconName == "poodle" ? Color.gray : Color.subcolor1
+        return ZStack {
+            Circle().fill(bgColor)
+            if let uiImage = user.avatarImage {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+                    .clipShape(Circle())
+            } else if !user.iconName.isEmpty {
+                Image(user.iconName)
+                    .resizable()
+                    .scaledToFill()
+                    .clipShape(Circle())
+            }
+        }
+        .frame(width: 22, height: 22)
     }
 
     // MARK: - Tab Button
@@ -169,4 +227,5 @@ struct RootTabView: View {
 
 #Preview {
     RootTabView()
+        .environmentObject(ActiveUserPreference())
 }
